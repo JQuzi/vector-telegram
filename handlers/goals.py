@@ -1,4 +1,3 @@
-# handlers/goals.py
 from aiogram import Router, F, types
 from aiogram.filters import StateFilter
 from aiogram.fsm.context import FSMContext
