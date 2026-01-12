@@ -1,9 +1,11 @@
+# main.py
+
 import asyncio
 from aiogram import Bot, Dispatcher
 
-# Импортируем наши роутеры и планировщик
-from handlers import common, habits
-from scheduler import setup_scheduler  # <-- НОВЫЙ ИМПОРТ
+# Импортируем наши роутеры
+from handlers import common, habits, goals  # <-- ДОБАВИЛИ goals
+from handlers import common, habits, goals, stats
 
 API_TOKEN = '7347989523:AAFhnQ-udpOIys3siLaWmKeEZ_5I_eG6_PY'
 
@@ -12,13 +14,11 @@ async def main():
     bot = Bot(token=API_TOKEN)
     dp = Dispatcher()
 
-    # Подключаем роутеры
+    # Подключаем роутеры к главному диспетчеру
     dp.include_router(common.router)
     dp.include_router(habits.router)
-
-    # Настраиваем и запускаем планировщик
-    scheduler = setup_scheduler(bot)  # <-- НОВАЯ СТРОКА
-    scheduler.start()  # <-- НОВАЯ СТРОКА
+    dp.include_router(goals.router)  # <-- ПОДКЛЮЧИЛИ НОВЫЙ РОУТЕР
+    dp.include_router(stats.router)
 
     print("Бот 'Вектор' и планировщик напоминаний запущены...")
 

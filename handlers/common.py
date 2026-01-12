@@ -19,8 +19,5 @@ async def back_to_main_menu(message: Message, state: FSMContext):
     await state.clear()
     await message.answer("Вы вернулись в главное меню.", reply_markup=kb.main_kb)
 
-# Заглушки для будущих разделов
-@router.message(F.text.in_({"Цели", "Статистика"}))
-async def not_implemented_handler(message: Message):
-    await message.answer("Этот раздел находится в разработке.")
+
 
