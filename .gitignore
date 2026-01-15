@@ -1,0 +1,16 @@
+
+venv/
+env/
+.venv/
+vector.db
+*.db
+*.sqlite
+*.sqlite3
+
+.idea/
+*.pyc
+__pycache__/
+.pytest_cache/
+.env
+
+
