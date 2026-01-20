@@ -131,9 +131,12 @@ def init_db() -> None:
     cursor.execute("CREATE INDEX IF NOT EXISTS idx_users_telegram_id ON users(telegram_id)")
     cursor.execute("CREATE INDEX IF NOT EXISTS idx_events_user_id ON events(user_id)")
     cursor.execute("CREATE INDEX IF NOT EXISTS idx_events_datetime ON events(event_datetime)")
-
+    # Миграции
     _ensure_column(cursor, "events", "remind_at_event", "remind_at_event INTEGER NOT NULL DEFAULT 1")
     _ensure_column(cursor, "events", "reminded_at_event", "reminded_at_event INTEGER NOT NULL DEFAULT 0")
+
+    _ensure_column(cursor, "events", "custom_remind_minutes", "custom_remind_minutes INTEGER")
+    _ensure_column(cursor, "events", "reminded_custom", "reminded_custom INTEGER NOT NULL DEFAULT 0")
 
     conn.commit()
     conn.close()

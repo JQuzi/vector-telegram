@@ -26,3 +26,8 @@ async def back_to_main_menu(message: Message, state: FSMContext):
 async def open_events_menu(message: Message, state: FSMContext):
     await state.clear()
     await message.answer("📅 Раздел «События».", reply_markup=kb.events_kb)
+
+@router.message(F.text == "⚙️ Настройки")
+async def open_settings_menu(message: Message, state: FSMContext):
+    await state.clear()
+    await message.answer("⚙️ Настройки:", reply_markup=kb.settings_kb)

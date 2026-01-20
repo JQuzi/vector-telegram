@@ -8,7 +8,7 @@ import os
 from scheduler import setup_scheduler
 load_dotenv()
 # Импортируем наши роутеры
-from handlers import common, habits, goals, stats, events
+from handlers import common, habits, goals, stats, events, settings
 
 
 API_TOKEN = os.getenv("API_TOKEN")
@@ -23,6 +23,7 @@ async def main():
     dp.include_router(goals.router)
     dp.include_router(stats.router)
     dp.include_router(events.router)
+    dp.include_router(settings.router)
 
     # создаём и запускаем планировщик
     scheduler = setup_scheduler(bot)

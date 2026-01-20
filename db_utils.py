@@ -222,6 +222,7 @@ def add_event(
     remind_day: int,
     remind_hour: int,
     remind_15_min: int,
+    custom_remind_minutes: int | None = None,
     timezone_offset: int | None = None,
 ) -> int | None:
     """
@@ -246,8 +247,9 @@ def add_event(
             """
             INSERT INTO events (
                 user_id, title, event_datetime, timezone_offset,
-                remind_day, remind_hour, remind_15_min
-            ) VALUES (?, ?, ?, ?, ?, ?, ?)
+                remind_day, remind_hour, remind_15_min,
+                custom_remind_minutes
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?)
             """,
             (
                 user_internal_id,
@@ -257,6 +259,7 @@ def add_event(
                 int(bool(remind_day)),
                 int(bool(remind_hour)),
                 int(bool(remind_15_min)),
+                (int(custom_remind_minutes) if custom_remind_minutes is not None else None),
             )
         )
         conn.commit()
@@ -337,6 +340,9 @@ def get_due_event_reminders(now_utc: datetime | None = None):
                 -- NEW: напоминание в момент события
                 COALESCE(e.remind_at_event, 1)  AS remind_at_event,
                 COALESCE(e.reminded_at_event, 0) AS reminded_at_event,
+                
+                e.custom_remind_minutes,
+                COALESCE(e.reminded_custom, 0) AS reminded_custom,
 
                 u.telegram_id
             FROM events e
@@ -359,6 +365,8 @@ def get_due_event_reminders(now_utc: datetime | None = None):
             reminded_15,
             remind_at_event,
             reminded_at_event,
+            custom_remind_minutes,
+            reminded_custom,
             telegram_id,
         ) = row
 
@@ -383,6 +391,14 @@ def get_due_event_reminders(now_utc: datetime | None = None):
         if int(remind_15) == 1 and int(reminded_15) == 0:
             remind_points.append(("15min", event_utc - timedelta(minutes=15)))
 
+        if custom_remind_minutes is not None and int(reminded_custom) == 0:
+            try:
+                cm = int(custom_remind_minutes)
+                if cm > 0:
+                    remind_points.append(("custom", event_utc - timedelta(minutes=cm)))
+            except Exception:
+                pass
+
         # В момент события (по умолчанию включено)
         if int(remind_at_event) == 1 and int(reminded_at_event) == 0:
             remind_points.append(("at", event_utc))
@@ -396,6 +412,7 @@ def get_due_event_reminders(now_utc: datetime | None = None):
                         "kind": kind,
                         "title": title,
                         "event_dt_local": event_local,
+                        "custom_minutes": int(custom_remind_minutes) if custom_remind_minutes is not None else None,
                     }
                 )
 
@@ -411,6 +428,7 @@ def mark_event_reminded(event_id: int, kind: str) -> None:
         "day": "reminded_day",
         "hour": "reminded_hour",
         "15min": "reminded_15_min",
+        "custom": "reminded_custom",
         "at": "reminded_at_event",
     }
 

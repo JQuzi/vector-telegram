@@ -14,10 +14,7 @@ async def check_habits_for_notification(bot: Bot):
     SELECT
         h.name, h.days_of_week, u.telegram_id, u.timezone_offset
     FROM habits h JOIN users u ON h.user_id = u.user_id
-    WHERE h.reminder_time IN (
-        strftime('%H:%M', 'now', u.timezone_offset || ' hours'),
-        strftime('%H:%M', 'now', '-1 minute', u.timezone_offset || ' hours')
-    )
+    WHERE h.reminder_time = strftime('%H:%M', 'now', u.timezone_offset || ' hours')
     """
     with sqlite3.connect(DB_FILE) as conn:
         cursor = conn.cursor()
@@ -72,9 +69,11 @@ async def check_events_for_notification(bot: Bot):
             prefix = "⏳ Через час"
         elif kind == "15min":
             prefix = "⚠️ Через 15 минут"
+        elif kind == "custom":
+            cm = item.get("custom_minutes")
+            prefix = f"⏱ Через {cm} мин" if cm else "⏱ Скоро"
         else:  # "at"
             prefix = "🔔 Сейчас"
-
         text = (
             f"{prefix}: *{title}*\n"
             f"🕒 {when_str}"

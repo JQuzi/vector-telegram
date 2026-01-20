@@ -11,6 +11,7 @@ main_kb = ReplyKeyboardMarkup(
         ],
         [
             KeyboardButton(text="Статистика"),
+            KeyboardButton(text="⚙️ Настройки"),
         ],
     ],
     resize_keyboard=True,
@@ -185,6 +186,13 @@ events_kb = ReplyKeyboardMarkup(
     input_field_placeholder="Управление событиями"
 )
 
+settings_kb = ReplyKeyboardMarkup(
+    keyboard=[
+        [KeyboardButton(text="🕒 Таймзона")],
+        [KeyboardButton(text="⬅️ Назад в главное меню")],
+    ],
+    resize_keyboard=True,
+)
 
 def get_event_reminders_kb(selected: set | None = None) -> InlineKeyboardMarkup:
     """
@@ -203,6 +211,7 @@ def get_event_reminders_kb(selected: set | None = None) -> InlineKeyboardMarkup:
         [InlineKeyboardButton(text=label("day", "За день"), callback_data="ev_rem_day")],
         [InlineKeyboardButton(text=label("hour", "За час"), callback_data="ev_rem_hour")],
         [InlineKeyboardButton(text=label("15min", "За 15 минут"), callback_data="ev_rem_15min")],
+        [InlineKeyboardButton(text=label("custom", "⏱ Свои минуты"), callback_data="ev_rem_custom")],
         [InlineKeyboardButton(text="✅ Готово", callback_data="ev_rem_done")],
     ]
     return InlineKeyboardMarkup(inline_keyboard=buttons)

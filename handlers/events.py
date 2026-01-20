@@ -21,6 +21,7 @@ class EventStates(StatesGroup):
     datetime = State()
     timezone = State()
     reminders = State()
+    custom_minutes = State()
 
 
 # ----------------------------
@@ -257,21 +258,39 @@ async def process_event_timezone(message: Message, state: FSMContext):
     await message.answer(f"✅ Часовой пояс установлен: UTC{offset:+}.\n\nТеперь ещё раз введи дату и время события:")
 
 
-@router.callback_query(EventStates.reminders, F.data.in_({"ev_rem_day", "ev_rem_hour", "ev_rem_15min", "ev_rem_done"}))
+@router.callback_query(
+    EventStates.reminders,
+    F.data.in_({"ev_rem_day", "ev_rem_hour", "ev_rem_15min", "ev_rem_custom", "ev_rem_done"})
+)
 async def event_reminders_click(cb: CallbackQuery, state: FSMContext):
     data = await state.get_data()
     selected: set = data.get("remind_selected", set())
     if not isinstance(selected, set):
         selected = set(selected or [])
 
+    # ─── toggle стандартных напоминаний ──────────────────────────────
     if cb.data == "ev_rem_day":
         selected.symmetric_difference_update({"day"})
+
     elif cb.data == "ev_rem_hour":
         selected.symmetric_difference_update({"hour"})
+
     elif cb.data == "ev_rem_15min":
         selected.symmetric_difference_update({"15min"})
+
+    # ─── кастомные минуты ─────────────────────────────────────────────
+    elif cb.data == "ev_rem_custom":
+        await state.set_state(EventStates.custom_minutes)
+        await cb.message.answer(
+            "⏱ Введи число минут, за сколько напомнить до события.\n"
+            "Например: 30\n\n"
+            "Чтобы отключить кастомное напоминание — введи 0."
+        )
+        await cb.answer()
+        return
+
+    # ─── сохранение события ──────────────────────────────────────────
     elif cb.data == "ev_rem_done":
-        # Сохраняем событие
         title = data["title"]
         event_datetime_iso = data["event_datetime_iso"]
         tz_off = int(data.get("tz_off", 0))
@@ -279,6 +298,13 @@ async def event_reminders_click(cb: CallbackQuery, state: FSMContext):
         remind_day = 1 if "day" in selected else 0
         remind_hour = 1 if "hour" in selected else 0
         remind_15 = 1 if "15min" in selected else 0
+
+        custom_minutes = data.get("custom_remind_minutes")
+        if custom_minutes is not None:
+            try:
+                custom_minutes = int(custom_minutes)
+            except (TypeError, ValueError):
+                custom_minutes = None
 
         db.add_event(
             telegram_id=cb.from_user.id,
@@ -288,6 +314,7 @@ async def event_reminders_click(cb: CallbackQuery, state: FSMContext):
             remind_hour=remind_hour,
             remind_15_min=remind_15,
             timezone_offset=tz_off,
+            custom_remind_minutes=custom_minutes,
         )
 
         await state.clear()
@@ -295,16 +322,55 @@ async def event_reminders_click(cb: CallbackQuery, state: FSMContext):
         await cb.answer()
         return
 
+    # ─── обновляем FSM и клавиатуру ───────────────────────────────────
     await state.update_data(remind_selected=selected)
 
-    # Обновляем клавиатуру (галочки)
     try:
-        await cb.message.edit_reply_markup(reply_markup=kb.get_event_reminders_kb(selected))
+        await cb.message.edit_reply_markup(
+            reply_markup=kb.get_event_reminders_kb(selected)
+        )
     except Exception:
-        # если edit не получается (например, сообщение старое) — просто игнорим
         pass
 
     await cb.answer()
+
+@router.message(EventStates.custom_minutes)
+async def event_set_custom_minutes(message: Message, state: FSMContext):
+    text = (message.text or "").strip()
+
+    try:
+        minutes = int(text)
+    except ValueError:
+        await message.answer("Нужно ввести целое число минут (например: 30).")
+        return
+
+    data = await state.get_data()
+    selected: set = data.get("remind_selected", set())
+    if not isinstance(selected, set):
+        selected = set(selected or [])
+
+    if minutes <= 0:
+        # выключаем кастомное напоминание
+        selected.discard("custom")
+        await state.update_data(
+            custom_remind_minutes=None,
+            remind_selected=selected,
+        )
+    else:
+        # включаем / обновляем кастом
+        selected.add("custom")
+        await state.update_data(
+            custom_remind_minutes=minutes,
+            remind_selected=selected,
+        )
+
+    # возвращаемся к выбору напоминаний
+    await state.set_state(EventStates.reminders)
+
+    await message.answer(
+        "✅ Готово. Выбери напоминания:",
+        reply_markup=kb.get_event_reminders_kb(selected),
+    )
 
 
 @router.message(F.text == "📋 Мои события")
