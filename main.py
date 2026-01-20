@@ -4,7 +4,7 @@ import asyncio
 from aiogram import Bot, Dispatcher
 from dotenv import load_dotenv
 import os
-
+from database import init_db
 from scheduler import setup_scheduler
 load_dotenv()
 # Импортируем наши роутеры
@@ -15,6 +15,7 @@ API_TOKEN = os.getenv("API_TOKEN")
 
 
 async def main():
+    init_db()
     bot = Bot(token=API_TOKEN)
     dp = Dispatcher()
 

@@ -1,6 +1,8 @@
+import os
 import sqlite3
 
-DB_PATH = "vector.db"
+BASE_DIR = os.path.dirname(os.path.abspath(__file__))
+DB_PATH = os.path.join(BASE_DIR, "vector.db")
 
 
 def _column_exists(cursor: sqlite3.Cursor, table: str, column: str) -> bool:

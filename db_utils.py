@@ -1,8 +1,7 @@
 # db_utils.py
 import sqlite3
 from datetime import datetime, timezone, timedelta
-
-DB_FILE = 'vector.db'
+from database import DB_PATH as DB_FILE
 
 
 # --- Функции для Пользователей ---

@@ -1,12 +1,12 @@
 import sqlite3
 from datetime import datetime, timezone, timedelta
-
+from database import DB_PATH as DB_FILE
 from aiogram import Bot
 from apscheduler.schedulers.asyncio import AsyncIOScheduler
 
 from db_utils import get_due_event_reminders, mark_event_reminded
 
-DB_FILE = "vector.db"
+
 
 
 async def check_habits_for_notification(bot: Bot):
