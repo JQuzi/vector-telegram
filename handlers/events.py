@@ -23,6 +23,12 @@ class EventStates(StatesGroup):
     reminders = State()
     custom_minutes = State()
 
+class EventEditStates(StatesGroup):
+    title = State()
+    datetime = State()
+    reminders = State()
+    custom_minutes = State()
+
 
 # ----------------------------
 # Date parsing (human-friendly)
@@ -154,7 +160,12 @@ def _events_list_kb(rows) -> InlineKeyboardMarkup:
         dt_str = r[2]
         # Кнопка удаления. Заголовок в кнопке — сокращаем.
         short = title if len(title) <= 28 else title[:28] + "…"
-        buttons.append([InlineKeyboardButton(text=f"🗑 {short} ({dt_str})", callback_data=f"ev_del_{event_id}")])
+        buttons.append([
+            InlineKeyboardButton(
+                text=f"📌 {short} ({dt_str})",
+                callback_data=f"ev_open_{event_id}"
+            )
+        ])
     return InlineKeyboardMarkup(inline_keyboard=buttons) if buttons else InlineKeyboardMarkup(inline_keyboard=[])
 
 
@@ -165,7 +176,7 @@ def _events_list_kb(rows) -> InlineKeyboardMarkup:
 @router.message(F.text == "➕ Добавить событие")
 async def add_event_start(message: Message, state: FSMContext):
     await state.clear()
-    await message.answer("Ок! Напиши название события 📝")
+    await message.answer("Напиши название события 📝")
     await state.set_state(EventStates.title)
 
 
@@ -381,9 +392,294 @@ async def list_events_handler(message: Message):
         return
 
     await message.answer(
-        "📋 Твои события (нажми, чтобы удалить):",
+        "📋 Твои события (нажми, чтобы открыть):",
         reply_markup=_events_list_kb(rows)
     )
+
+def _event_detail_kb(event_id: int) -> InlineKeyboardMarkup:
+    return InlineKeyboardMarkup(inline_keyboard=[
+        [InlineKeyboardButton(text="✏️ Название", callback_data=f"ev_edit_title_{event_id}")],
+        [InlineKeyboardButton(text="🕒 Дата и время", callback_data=f"ev_edit_dt_{event_id}")],
+        [InlineKeyboardButton(text="🔔 Напоминания", callback_data=f"ev_edit_rem_{event_id}")],
+        [InlineKeyboardButton(text="🗑 Удалить", callback_data=f"ev_del_{event_id}")],
+        [InlineKeyboardButton(text="⬅️ Назад к списку", callback_data="ev_back_to_list")],
+    ])
+
+def _render_event_card(row) -> str:
+    # row = (event_id, title, event_datetime, tz_off, remind_day, remind_hour, remind_15, custom_minutes, remind_at)
+    _, title, dt_str, tz_off, r_day, r_hour, r_15, custom_m, r_at = row
+
+    reminds = []
+    if r_day:
+        reminds.append("• за день")
+    if r_hour:
+        reminds.append("• за час")
+    if r_15:
+        reminds.append("• за 15 минут")
+    if custom_m is not None:
+        reminds.append(f"• за {int(custom_m)} минут")
+    if r_at:
+        reminds.append("• в момент события")
+
+    reminds_txt = "\n".join(reminds) if reminds else "• нет"
+
+    date_part, time_part = dt_str.split(" ", 1)
+    time_part = time_part[:5]
+
+    return (
+        f"📌 <b>{title}</b>\n\n"
+        f"🕒 <b>{date_part}</b>\n"
+        f"{time_part} (UTC{int(tz_off):+})\n\n"
+        f"🔔 <b>Напоминания:</b>\n{reminds_txt}\n\n"
+        f"<b>Редактировать:</b>"
+    )
+
+@router.callback_query(F.data.startswith("ev_edit_rem_"))
+async def edit_event_reminders_start(cb: CallbackQuery, state: FSMContext):
+    try:
+        event_id = int(cb.data.split("_")[-1])
+    except Exception:
+        await cb.answer("Не понял id события", show_alert=True)
+        return
+
+    row = db.get_event_by_id(cb.from_user.id, event_id)
+    if not row:
+        await cb.answer("Событие не найдено.", show_alert=True)
+        return
+
+    # row: (event_id, title, dt_str, tz_off, r_day, r_hour, r_15, custom_m, r_at)
+    _, title, _, _, r_day, r_hour, r_15, custom_m, r_at = row
+
+    selected = set()
+    if r_day:
+        selected.add("day")
+    if r_hour:
+        selected.add("hour")
+    if r_15:
+        selected.add("15min")
+    if custom_m is not None:
+        selected.add("custom")
+    if r_at:
+        selected.add("at")
+
+    await state.clear()
+    await state.update_data(
+        edit_event_id=event_id,
+        remind_selected=selected,
+        custom_remind_minutes=custom_m,
+    )
+    await state.set_state(EventEditStates.reminders)
+
+    await cb.message.answer(
+        f"🔔 Напоминания для события: <b>{title}</b>\n"
+        "Выбери нужные и нажми ✅ Готово",
+        reply_markup=kb.get_event_reminders_kb(selected),
+        parse_mode="HTML",
+    )
+    await cb.answer()
+
+@router.callback_query(
+    EventEditStates.reminders,
+    F.data.in_({"ev_rem_day", "ev_rem_hour", "ev_rem_15min", "ev_rem_custom", "ev_rem_done"})
+)
+async def edit_event_reminders_click(cb: CallbackQuery, state: FSMContext):
+    data = await state.get_data()
+    selected: set = data.get("remind_selected", set())
+    if not isinstance(selected, set):
+        selected = set(selected or [])
+
+    if cb.data == "ev_rem_day":
+        selected.symmetric_difference_update({"day"})
+    elif cb.data == "ev_rem_hour":
+        selected.symmetric_difference_update({"hour"})
+    elif cb.data == "ev_rem_15min":
+        selected.symmetric_difference_update({"15min"})
+    elif cb.data == "ev_rem_custom":
+        await state.set_state(EventEditStates.custom_minutes)
+        await cb.message.answer(
+            "⏱ Введи число минут, за сколько напомнить до события.\n"
+            "Например: 30\n\n"
+            "Чтобы отключить кастом — введи 0."
+        )
+        await cb.answer()
+        return
+
+    elif cb.data == "ev_rem_done":
+        event_id = int(data["edit_event_id"])
+
+        remind_day = 1 if "day" in selected else 0
+        remind_hour = 1 if "hour" in selected else 0
+        remind_15 = 1 if "15min" in selected else 0
+
+        custom_minutes = data.get("custom_remind_minutes")
+        if "custom" not in selected:
+            custom_minutes = None
+
+        ok = db.update_event_reminders(
+            telegram_id=cb.from_user.id,
+            event_id=event_id,
+            remind_day=remind_day,
+            remind_hour=remind_hour,
+            remind_15_min=remind_15,
+            custom_remind_minutes=custom_minutes,
+            remind_at_event=1,  # пока всегда включено как у тебя сейчас
+        )
+
+        await state.clear()
+
+        if not ok:
+            await cb.message.answer("Не удалось сохранить напоминания.")
+            await cb.answer()
+            return
+
+        row = db.get_event_by_id(cb.from_user.id, event_id)
+        if row:
+            await cb.message.answer(
+                "✅ Напоминания обновлены.\n\n" + _render_event_card(row),
+                reply_markup=_event_detail_kb(event_id),
+                parse_mode="HTML",
+            )
+        else:
+            await cb.message.answer("✅ Напоминания обновлены.")
+
+        await cb.answer()
+        return
+
+    await state.update_data(remind_selected=selected)
+
+    try:
+        await cb.message.edit_reply_markup(reply_markup=kb.get_event_reminders_kb(selected))
+    except Exception:
+        pass
+
+    await cb.answer()
+
+@router.message(EventEditStates.custom_minutes)
+async def edit_event_set_custom_minutes(message: Message, state: FSMContext):
+    text = (message.text or "").strip()
+
+    try:
+        minutes = int(text)
+    except ValueError:
+        await message.answer("Нужно целое число минут (например: 30).")
+        return
+
+    data = await state.get_data()
+    selected: set = data.get("remind_selected", set())
+    if not isinstance(selected, set):
+        selected = set(selected or [])
+
+    if minutes <= 0:
+        selected.discard("custom")
+        await state.update_data(custom_remind_minutes=None, remind_selected=selected)
+    else:
+        selected.add("custom")
+        await state.update_data(custom_remind_minutes=minutes, remind_selected=selected)
+
+    await state.set_state(EventEditStates.reminders)
+    await message.answer(
+        "✅ Ок. Выбери напоминания:",
+        reply_markup=kb.get_event_reminders_kb(selected),
+    )
+
+
+@router.callback_query(F.data.startswith("ev_edit_dt_"))
+async def edit_event_datetime_start(cb: CallbackQuery, state: FSMContext):
+    try:
+        event_id = int(cb.data.split("_")[-1])
+    except Exception:
+        await cb.answer("Не понял id события", show_alert=True)
+        return
+
+    row = db.get_event_by_id(cb.from_user.id, event_id)
+    if not row:
+        await cb.answer("Событие не найдено.", show_alert=True)
+        return
+
+    # row: (event_id, title, event_datetime, tz_off, ...)
+    _, title, event_datetime_str, tz_off, *_ = row
+
+    await state.clear()
+    await state.update_data(edit_event_id=event_id, edit_tz_off=int(tz_off))
+    await state.set_state(EventEditStates.datetime)
+
+    await cb.message.answer(
+        f"🕒 Новая дата/время для события:\n<b>{title}</b>\n"
+        f"Сейчас: <b>{event_datetime_str}</b> (UTC{int(tz_off):+})\n\n"
+        "Введи новую дату/время, например:\n"
+        "• завтра 19:00\n"
+        "• 31.01 18:00\n"
+        "• 2026-01-24 09:00",
+        parse_mode="HTML",
+    )
+    await cb.answer()
+
+@router.message(EventEditStates.datetime)
+async def edit_event_datetime_save(message: Message, state: FSMContext):
+    data = await state.get_data()
+    event_id = data.get("edit_event_id")
+    tz_off = data.get("edit_tz_off")
+
+    if not event_id or tz_off is None:
+        await state.clear()
+        await message.answer("Не понял, какое событие редактируем. Открой событие заново.")
+        return
+
+    tz_off = int(tz_off)
+    now_local = datetime.utcnow() + timedelta(hours=tz_off)
+
+    parsed = parse_human_datetime(message.text or "", now_local)
+    if not parsed:
+        await message.answer(
+            "Не понял дату 😅\n"
+            "Напиши в одном из форматов, например: `завтра 19:00` или `31.01 18:00`",
+            parse_mode="Markdown",
+        )
+        return
+
+    if parsed.dt < now_local:
+        await message.answer("Это время уже в прошлом. Дай дату/время в будущем 🙂")
+        return
+
+    dt_norm = parsed.dt.replace(second=0, microsecond=0).isoformat(sep=" ")
+
+    ok = db.update_event_datetime(message.from_user.id, int(event_id), dt_norm)
+    await state.clear()
+
+    if not ok:
+        await message.answer("Не удалось сохранить. Возможно событие удалено.")
+        return
+
+    # Покажем обновлённую карточку
+    row = db.get_event_by_id(message.from_user.id, int(event_id))
+    if row:
+        await message.answer(
+            _render_event_card(row),
+            reply_markup=_event_detail_kb(int(event_id)),
+            parse_mode="HTML",
+        )
+    else:
+        await message.answer("✅ Дата/время обновлены!")
+
+@router.callback_query(F.data.startswith("ev_open_"))
+async def open_event_cb(cb: CallbackQuery):
+    try:
+        event_id = int(cb.data.split("_")[-1])
+    except Exception:
+        await cb.answer("Не понял id события", show_alert=True)
+        return
+
+    row = db.get_event_by_id(cb.from_user.id, event_id)
+    if not row:
+        await cb.answer("Событие не найдено (возможно удалено).", show_alert=True)
+        return
+
+    await cb.message.edit_text(
+        _render_event_card(row),
+        reply_markup=_event_detail_kb(event_id),
+        parse_mode="HTML"
+    )
+    await cb.answer()
 
 
 @router.callback_query(F.data.startswith("ev_del_"))
@@ -405,4 +701,60 @@ async def delete_event_cb(cb: CallbackQuery):
     if not rows:
         await cb.message.edit_text("Событий больше нет.")
         return
-    await cb.message.edit_reply_markup(reply_markup=_events_list_kb(rows))
+
+    await cb.message.edit_text(
+        "📋 Твои события (нажми, чтобы открыть):",
+        reply_markup=_events_list_kb(rows)
+    )
+
+@router.callback_query(F.data == "ev_back_to_list")
+async def back_to_events_list_cb(cb: CallbackQuery):
+    rows = db.list_events(cb.from_user.id, limit=30)
+    if not rows:
+        await cb.message.edit_text("Событий пока нет.")
+        await cb.answer()
+        return
+
+    await cb.message.edit_text(
+        "📋 Твои события (нажми, чтобы открыть):",
+        reply_markup=_events_list_kb(rows)
+    )
+    await cb.answer()
+
+@router.callback_query(F.data.startswith("ev_edit_title_"))
+async def edit_event_title_start(cb: CallbackQuery, state: FSMContext):
+    try:
+        event_id = int(cb.data.split("_")[-1])
+    except Exception:
+        await cb.answer("Не понял id события", show_alert=True)
+        return
+
+    await state.clear()
+    await state.update_data(edit_event_id=event_id)
+    await state.set_state(EventEditStates.title)
+
+    await cb.message.answer("✏️ Введи новое название события:")
+    await cb.answer()
+
+@router.message(EventEditStates.title)
+async def edit_event_title_save(message: Message, state: FSMContext):
+    new_title = (message.text or "").strip()
+    if not new_title:
+        await message.answer("Название не должно быть пустым. Напиши ещё раз 🙂")
+        return
+
+    data = await state.get_data()
+    event_id = data.get("edit_event_id")
+    if not event_id:
+        await state.clear()
+        await message.answer("Не нашёл какое событие редактируем. Открой список событий заново.")
+        return
+
+    ok = db.update_event_title(message.from_user.id, int(event_id), new_title)
+    await state.clear()
+
+    if not ok:
+        await message.answer("Не удалось сохранить. Возможно событие удалено.")
+        return
+
+    await message.answer("✅ Название обновлено!")

@@ -284,6 +284,95 @@ def list_events(telegram_id: int, limit: int = 20):
         )
         return cursor.fetchall()
 
+def update_event_title(telegram_id: int, event_id: int, new_title: str) -> bool:
+    user_internal_id = _get_user_internal_id(telegram_id)
+    if not user_internal_id:
+        return False
+
+    with sqlite3.connect(DB_FILE) as conn:
+        cursor = conn.cursor()
+        cursor.execute(
+            """
+            UPDATE events
+            SET title = ?
+            WHERE event_id = ?
+              AND user_id = ?
+            """,
+            (new_title.strip(), int(event_id), int(user_internal_id))
+        )
+        conn.commit()
+        return cursor.rowcount > 0
+
+def update_event_datetime(telegram_id: int, event_id: int, new_event_datetime: str) -> bool:
+    user_internal_id = _get_user_internal_id(telegram_id)
+    if not user_internal_id:
+        return False
+
+    with sqlite3.connect(DB_FILE) as conn:
+        cursor = conn.cursor()
+        cursor.execute(
+            """
+            UPDATE events
+            SET
+                event_datetime = ?,
+                reminded_day = 0,
+                reminded_hour = 0,
+                reminded_15_min = 0,
+                reminded_custom = 0,
+                reminded_at_event = 0
+            WHERE event_id = ?
+              AND user_id = ?
+            """,
+            (new_event_datetime, int(event_id), int(user_internal_id))
+        )
+        conn.commit()
+        return cursor.rowcount > 0
+
+def update_event_reminders(
+    telegram_id: int,
+    event_id: int,
+    remind_day: int,
+    remind_hour: int,
+    remind_15_min: int,
+    custom_remind_minutes,
+    remind_at_event: int = 1,
+) -> bool:
+    user_internal_id = _get_user_internal_id(telegram_id)
+    if not user_internal_id:
+        return False
+
+    with sqlite3.connect(DB_FILE) as conn:
+        cursor = conn.cursor()
+        cursor.execute(
+            """
+            UPDATE events
+            SET
+                remind_day = ?,
+                remind_hour = ?,
+                remind_15_min = ?,
+                custom_remind_minutes = ?,
+                remind_at_event = ?,
+                reminded_day = 0,
+                reminded_hour = 0,
+                reminded_15_min = 0,
+                reminded_custom = 0,
+                reminded_at_event = 0
+            WHERE event_id = ?
+              AND user_id = ?
+            """,
+            (
+                int(remind_day),
+                int(remind_hour),
+                int(remind_15_min),
+                custom_remind_minutes,
+                int(remind_at_event),
+                int(event_id),
+                int(user_internal_id),
+            )
+        )
+        conn.commit()
+        return cursor.rowcount > 0
+
 
 def delete_event(telegram_id: int, event_id: int) -> bool:
     user_internal_id = _get_user_internal_id(telegram_id)
@@ -299,6 +388,27 @@ def delete_event(telegram_id: int, event_id: int) -> bool:
         conn.commit()
         return cursor.rowcount > 0
 
+def get_event_by_id(telegram_id: int, event_id: int):
+    user_internal_id = _get_user_internal_id(telegram_id)
+    if not user_internal_id:
+        return None
+
+    with sqlite3.connect(DB_FILE) as conn:
+        cursor = conn.cursor()
+        cursor.execute(
+            """
+            SELECT
+                event_id, title, event_datetime,
+                COALESCE(timezone_offset, 0) AS tz_off,
+                remind_day, remind_hour, remind_15_min,
+                custom_remind_minutes,
+                COALESCE(remind_at_event, 1) AS remind_at_event
+            FROM events
+            WHERE event_id = ? AND user_id = ?
+            """,
+            (int(event_id), int(user_internal_id))
+        )
+        return cursor.fetchone()
 
 def get_due_event_reminders(now_utc: datetime | None = None):
     """

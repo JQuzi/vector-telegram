@@ -65,6 +65,19 @@ async def habits_pagination_handler(callback: CallbackQuery):
     await callback.message.edit_text("📋 **Ваши привычки:**", reply_markup=keyboard, parse_mode="Markdown")
     await callback.answer()
 
+@router.callback_query(F.data == "back_to_habits_list")
+async def back_to_habits_list_handler(callback: CallbackQuery):
+    habits = db.get_user_habits(callback.from_user.id)
+
+    if not habits:
+        await callback.message.edit_text("У вас пока нет созданных привычек.", reply_markup=None)
+        await callback.answer()
+        return
+
+    keyboard = kb.get_habits_pagination_kb(habits, page=0)
+    await callback.message.edit_text("📋 **Ваши привычки:**", reply_markup=keyboard, parse_mode="Markdown")
+    await callback.answer()
+
 
 @router.callback_query(F.data.startswith('view_habit_'))
 async def view_habit_handler(callback: CallbackQuery, state: FSMContext):

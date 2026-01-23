@@ -11,7 +11,7 @@ router = Router()
 
 @router.message(F.text == "Статистика")
 async def stats_menu(message: Message):
-    await message.answer("По какому разделу вы хотите посмотреть статистику?", reply_markup=kb.stats_menu_kb)
+    await message.answer("По какому разделу вы хотите посмотреть статистику? (Данный раздел находится в разработке)", reply_markup=kb.stats_menu_kb)
 
 
 @router.callback_query(F.data == "stats_habits")
