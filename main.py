@@ -5,7 +5,9 @@ from aiogram import Bot, Dispatcher
 from config import API_TOKEN
 
 from database import init_db
+
 from scheduler import setup_scheduler
+
 
 from handlers import common, habits, goals, stats, events, settings
 
