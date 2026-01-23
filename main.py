@@ -2,16 +2,12 @@
 
 import asyncio
 from aiogram import Bot, Dispatcher
-from dotenv import load_dotenv
-import os
+from config import API_TOKEN
+
 from database import init_db
 from scheduler import setup_scheduler
-load_dotenv()
-# Импортируем наши роутеры
+
 from handlers import common, habits, goals, stats, events, settings
-
-
-API_TOKEN = os.getenv("API_TOKEN")
 
 
 async def main():
